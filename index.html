@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Telesphorus — Recovery Companion</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'DM Sans', sans-serif; background: #F5F2EB; color: #1a1a1a; }
+  input, textarea, button { font-family: 'DM Sans', sans-serif; }
+  .field-input { width: 100%; padding: 11px 14px; border: 1px solid #D8D2C6; border-radius: 8px; font-size: 14px; color: #1a1a1a; background: #FDFAF4; outline: none; line-height: 1.5; transition: border-color 0.15s; resize: vertical; }
+  .field-input:focus { border-color: #2D5A45; }
+  .field-input::placeholder { color: #B0AAA0; }
+  .btn-primary { width: 100%; padding: 13px; background: #04342C; color: #E8C97A; border: none; border-radius: 9px; font-size: 14px; font-weight: 500; cursor: pointer; letter-spacing: 0.02em; transition: background 0.15s; }
+  .btn-primary:disabled { background: #D0CBC0; color: #9A9590; cursor: not-allowed; }
+  .btn-primary:not(:disabled):hover { background: #085041; }
+  @keyframes pulse { 0%, 80%, 100% { transform: scale(0.55); opacity: 0.35; } 40% { transform: scale(1); opacity: 1; } }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: #C5BFB0; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+const AK = "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";
+const INIT = "Please begin the check-in conversation now with a warm, personalised opening message for this patient.";
+
+function buildSystem(p) {
+  return `You are Telesphorus, a warm, empathetic and clinically-informed AI recovery companion supporting patients in the critical period after hospital discharge.
+
+Patient name: ${p.name}
+Diagnosis / reason for admission: ${p.diagnosis}
+Current medications: ${p.medications || "Not specified"}
+Discharge notes: ${p.notes || "None provided"}
+
+Your role: Conduct a warm, structured recovery check-in conversation. Keep responses to 2-4 sentences — concise, human, and warm. Use plain English and explain any medical terms.
+
+Clinical approach:
+- Ask targeted questions relevant to this patient's specific diagnosis, drawing on NICE guidelines and NHS Clinical Knowledge Summaries
+- Check medication adherence and any side effects
+- Assess functional recovery: sleep, appetite, mobility, daily activities, and emotional wellbeing
+- Provide evidence-based, condition-specific reassurance and self-management guidance
+
+CRITICAL ESCALATION PROTOCOL: If the patient describes any red flag symptoms for their condition:
+- Calmly but clearly acknowledge the concern
+- State the exact action: "Please call 999 now" (life-threatening emergency), "Please call 111 now" (urgent non-emergency), or "Please contact your GP today" (non-urgent but important)
+- Never minimise potentially serious symptoms — always err on the side of caution
+
+You are a supportive companion, not a replacement for medical care. Be genuinely warm and human.`;
+}
+
+async function askClaude(system, messages) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": AK, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system, messages })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content[0].text;
+}
+
+function Field({ label, hint, placeholder, value, onChange, multi }) {
+  const Tag = multi ? "textarea" : "input";
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#2D5A45", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>
+        {label}{hint && <span style={{ color: "#999", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}> — {hint}</span>}
+      </label>
+      <Tag className="field-input" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={multi ? 3 : undefined} style={multi ? {} : { resize: "none" }} />
+    </div>
+  );
+}
+
+function Setup({ p, setP, onStart, busy }) {
+  const ok = p.name.trim() && p.diagnosis.trim();
+  return (
+    <div style={{ minHeight: "100vh", background: "#F5F2EB", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "2rem 1rem 3rem" }}>
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#04342C", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "#E8C97A", fontSize: 22, fontFamily: "'Playfair Display', serif" }}>T</div>
+          <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 30, fontWeight: 500, color: "#04342C", marginBottom: 6, letterSpacing: "-0.5px" }}>Telesphorus</h1>
+          <p style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em" }}>Recovery companion</p>
+        </div>
+        <div style={{ background: "#FDFAF4", border: "1px solid #E0DAD0", borderRadius: 14, padding: "1.75rem 1.5rem", boxShadow: "0 2px 20px rgba(4,52,44,0.06)" }}>
+          <p style={{ fontSize: 13.5, color: "#666", marginBottom: "1.5rem", lineHeight: 1.7 }}>Enter the patient's details to begin a personalised, clinically-informed recovery check-in.</p>
+          <Field label="Patient name" placeholder="e.g. Margaret Johnson" value={p.name} onChange={v => setP(x => ({ ...x, name: v }))} />
+          <Field label="Diagnosis" hint="reason for admission" placeholder="e.g. Acute myocardial infarction, hip replacement, COPD exacerbation…" value={p.diagnosis} onChange={v => setP(x => ({ ...x, diagnosis: v }))} multi />
+          <Field label="Medications" hint="optional" placeholder="e.g. Aspirin 75mg, Atorvastatin 40mg, Ramipril 5mg…" value={p.medications} onChange={v => setP(x => ({ ...x, medications: v }))} multi />
+          <Field label="Discharge notes" hint="optional" placeholder="Any specific instructions from the discharge summary…" value={p.notes} onChange={v => setP(x => ({ ...x, notes: v }))} multi />
+          <button className="btn-primary" style={{ marginTop: 6 }} onClick={onStart} disabled={!ok || busy}>
+            {busy ? "Starting check-in…" : "Begin check-in →"}
+          </button>
+        </div>
+        <p style={{ fontSize: 11, color: "#9A9590", textAlign: "center", marginTop: 16, lineHeight: 1.7 }}>Telesphorus supports recovery and does not replace medical care.<br />In an emergency, always call 999.</p>
+      </div>
+    </div>
+  );
+}
+
+function Dots() {
+  return (
+    <div style={{ display: "flex", gap: 5, padding: "11px 15px", background: "#fff", border: "1px solid #E0DAD0", borderRadius: "16px 16px 16px 4px", width: "fit-content", marginLeft: 36, marginBottom: 10 }}>
+      {[0, 0.22, 0.44].map((d, i) => <span key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#4A7C6F", display: "inline-block", animation: `pulse 1.4s ${d}s ease-in-out infinite` }} />)}
+    </div>
+  );
+}
+
+function Bubble({ msg }) {
+  const isUser = msg.role === "user";
+  const isAlert = !isUser && /call 999|call 111|GP today|seek medical|emergency|urgent/i.test(msg.content);
+  return (
+    <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 12, alignItems: "flex-end", gap: 9 }}>
+      {!isUser && <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#04342C", color: "#E8C97A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, fontFamily: "'Playfair Display', serif" }}>T</div>}
+      <div style={{ maxWidth: "74%", padding: "12px 16px", borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px", background: isUser ? "#04342C" : isAlert ? "#FFF8EC" : "#fff", border: isUser ? "none" : isAlert ? "1.5px solid #E8C97A" : "1px solid #E0DAD0", color: isUser ? "#F0F9F5" : "#1a1a1a" }}>
+        {isAlert && <div style={{ fontSize: 10, fontWeight: 500, color: "#A07020", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>⚠ Important notice</div>}
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{msg.content}</p>
+      </div>
+    </div>
+  );
+}
+
+function Chat({ p, msgs, input, setInput, busy, onSend, endRef, inputRef, onBack }) {
+  const handleKey = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } };
+  const canSend = input.trim() && !busy;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#F5F2EB" }}>
+      <div style={{ background: "#FDFAF4", borderBottom: "1px solid #E0DAD0", padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 13, color: "#2D5A45", cursor: "pointer", padding: 0 }}>← New patient</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#04342C", color: "#E8C97A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontFamily: "'Playfair Display', serif" }}>T</div>
+          <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, fontWeight: 500, color: "#04342C" }}>Telesphorus</span>
+        </div>
+        <span style={{ fontSize: 12.5, color: "#888", fontStyle: "italic" }}>{p.name}</span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
+        {msgs.length === 0 && busy && <div style={{ display: "flex", alignItems: "flex-end", gap: 9, marginBottom: 12 }}><div style={{ width: 30, height: 30, borderRadius: "50%", background: "#04342C", color: "#E8C97A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontFamily: "'Playfair Display', serif" }}>T</div><Dots /></div>}
+        {msgs.map((m, i) => <Bubble key={i} msg={m} />)}
+        {msgs.length > 0 && busy && <Dots />}
+        <div ref={endRef} />
+      </div>
+      <div style={{ background: "#FDFAF4", borderTop: "1px solid #E0DAD0", padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-end", flexShrink: 0 }}>
+        <textarea ref={inputRef} className="field-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey} placeholder="How are you feeling today?" rows={1} disabled={busy} style={{ flex: 1, borderRadius: 22, resize: "none", padding: "10px 16px" }} />
+        <button onClick={onSend} disabled={!canSend} style={{ width: 40, height: 40, borderRadius: "50%", background: canSend ? "#04342C" : "#D0CBC0", border: "none", color: canSend ? "#E8C97A" : "#9A9590", cursor: canSend ? "pointer" : "default", fontSize: 18, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>↑</button>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11, color: "#9A9590", padding: "6px 16px 10px", background: "#FDFAF4", flexShrink: 0 }}>In an emergency, call 999 immediately.</div>
+    </div>
+  );
+}
+
+function App() {
+  const [screen, setScreen] = useState("setup");
+  const [p, setP] = useState({ name: "", diagnosis: "", medications: "", notes: "" });
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+  useEffect(() => { if (screen === "chat" && !busy) inputRef.current?.focus(); }, [screen, busy]);
+
+  const startChat = async () => {
+    if (!p.name.trim() || !p.diagnosis.trim()) return;
+    setScreen("chat"); setBusy(true);
+    try {
+      const text = await askClaude(buildSystem(p), [{ role: "user", content: INIT }]);
+      setMsgs([{ role: "assistant", content: text }]);
+    } catch (e) { setMsgs([{ role: "assistant", content: `Error: ${e.message}` }]); }
+    setBusy(false);
+  };
+
+  const send = async () => {
+    if (!input.trim() || busy) return;
+    const u = { role: "user", content: input.trim() };
+    const next = [...msgs, u];
+    setMsgs(next); setInput(""); setBusy(true);
+    try {
+      const text = await askClaude(buildSystem(p), [{ role: "user", content: INIT }, ...next]);
+      setMsgs([...next, { role: "assistant", content: text }]);
+    } catch { setMsgs([...next, { role: "assistant", content: "Connection issue. Please try again." }]); }
+    setBusy(false);
+  };
+
+  if (screen === "setup") return <Setup p={p} setP={setP} onStart={startChat} busy={busy} />;
+  return <Chat p={p} msgs={msgs} input={input} setInput={setInput} busy={busy} onSend={send} endRef={endRef} inputRef={inputRef} onBack={() => { setScreen("setup"); setMsgs([]); setInput(""); }} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
